@@ -187,6 +187,12 @@ with tab_ml:
                     g.station_id.values, logv, g.air_dose_rate.values
                 F["name"] = g.display_name.fillna(g.station_id).values
                 frames.append(F)
+            if not frames:
+                st.error(
+                    "選択されたデータが少なすぎて学習できません(1時点あたり30局以上が必要)。"
+                    "都道府県の選択を増やす・空欄(全国)にする・期間を広げる、のいずれかを"
+                    "試してください。")
+                st.stop()
             data = pd.concat(frames, ignore_index=True)
 
         feats = [c for c in data.columns if c not in
