@@ -1,0 +1,9 @@
+# ローカル専用(公開しない)
+data/
+out/
+_site/
+__pycache__/
+*.pyc
+.DS_Store
+gha_data/stations.new.csv.gz
+com.taka.ramis-collect.plist

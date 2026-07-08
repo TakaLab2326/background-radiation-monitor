@@ -1,0 +1,363 @@
+<meta charset="utf-8">
+<title>標高×線量率 3Dマップ（試作）</title>
+<style>
+  :root {
+    --page: #f9f9f7; --surface: #fcfcfb;
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --hairline: rgba(11,11,11,0.10); --coast: #c3c2b7;
+    --bin-0: #86b6ef; --bin-1: #5598e7; --bin-2: #2a78d6; --bin-3: #1c5cab; --bin-4: #0d366b;
+    --pt: #2a78d6; --accent: #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #0d0d0d; --surface: #1a1a19;
+      --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --hairline: rgba(255,255,255,0.10); --coast: #4a4a46;
+      --bin-0: #184f95; --bin-1: #256abf; --bin-2: #3987e5; --bin-3: #86b6ef; --bin-4: #cde2fb;
+      --pt: #3987e5; --accent: #3987e5;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #0d0d0d; --surface: #1a1a19;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --hairline: rgba(255,255,255,0.10); --coast: #4a4a46;
+    --bin-0: #184f95; --bin-1: #256abf; --bin-2: #3987e5; --bin-3: #86b6ef; --bin-4: #cde2fb;
+    --pt: #3987e5; --accent: #3987e5;
+  }
+  :root[data-theme="light"] {
+    --page: #f9f9f7; --surface: #fcfcfb;
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --hairline: rgba(11,11,11,0.10); --coast: #c3c2b7;
+    --bin-0: #86b6ef; --bin-1: #5598e7; --bin-2: #2a78d6; --bin-3: #1c5cab; --bin-4: #0d366b;
+    --pt: #2a78d6; --accent: #2a78d6;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", sans-serif;
+    font-size: 14px; line-height: 1.6; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 24px 20px 40px; display: flex; flex-direction: column; gap: 16px; }
+  header .eyebrow { font-size: 11px; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; margin-bottom: 2px; }
+  header h1 { margin: 0; font-size: 22px; font-weight: 700; text-wrap: balance; }
+  header .sub { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+
+  .main { display: flex; gap: 16px; align-items: stretch; flex-wrap: wrap; }
+  .panel { background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px; padding: 14px 16px; position: relative; }
+  .panel h2 { margin: 0 0 2px; font-size: 13px; font-weight: 700; }
+  .panel .note { font-size: 11px; color: var(--ink-2); margin: 0 0 8px; }
+  .stage { flex: 3 1 620px; min-width: 0; padding: 0; overflow: hidden; }
+  #map3d { display: block; width: 100%; height: 660px; cursor: grab; touch-action: none; }
+  #map3d.dragging { cursor: grabbing; }
+  .side { flex: 1 1 260px; display: flex; flex-direction: column; gap: 12px; }
+
+  .hud { position: absolute; top: 10px; left: 10px; z-index: 4;
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px;
+    padding: 8px 12px; font-size: 11px; color: var(--ink-2); max-width: 250px; }
+  .hud b { color: var(--ink); }
+  .hud input[type=range] { width: 100%; accent-color: var(--accent); }
+
+  .legend-rows { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-2); }
+  .legend-rows .row2 { display: flex; align-items: center; gap: 8px; }
+  .sw { width: 13px; height: 13px; border-radius: 50%; border: 1px solid var(--hairline); flex: 0 0 auto; }
+  .legend-rows .num { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+  .tip { position: absolute; pointer-events: none; display: none; z-index: 5;
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: 6px;
+    padding: 7px 10px; font-size: 12px; line-height: 1.5; max-width: 250px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+  .tip b { display: block; }
+  .tip .s { color: var(--ink-2); }
+
+  canvas.plot { display: block; width: 100%; }
+  .kv { font-size: 12px; color: var(--ink-2); display: flex; flex-direction: column; gap: 2px; }
+  .kv div { display: flex; justify-content: space-between; gap: 8px; }
+  .kv span:last-child { font-variant-numeric: tabular-nums; color: var(--ink); }
+
+  footer { color: var(--muted); font-size: 11px; line-height: 1.7; border-top: 1px solid var(--grid); padding-top: 10px; }
+  footer a { color: var(--ink-2); }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">RAMIS × Elevation — 3D Prototype</div>
+    <h1>標高でみる全国の空間線量率（3D）</h1>
+    <div class="sub" id="subline"></div>
+  </header>
+
+  <div class="main">
+    <div class="panel stage" id="p3d">
+      <div class="hud">
+        <b>ドラッグ</b>回転 ／ <b>Shift+ドラッグ</b>移動 ／ <b>ホイール</b>拡大 ／ <b>ダブルクリック</b>リセット
+        <div style="margin-top:6px">高さの強調 <span id="exv" style="font-variant-numeric:tabular-nums"></span>×
+          <input type="range" id="ex" min="2" max="60" step="1" value="35" aria-label="高さの強調倍率">
+        </div>
+      </div>
+      <canvas id="map3d"></canvas>
+      <div class="tip"></div>
+    </div>
+
+    <div class="side">
+      <div class="panel">
+        <h2>空間線量率 µSv/h</h2>
+        <div class="legend-rows" id="legend"></div>
+      </div>
+      <div class="panel" id="p-sc">
+        <h2>標高と線量率の関係</h2>
+        <p class="note">1点=1局。縦軸は対数。</p>
+        <canvas class="plot" id="sc-elev" height="240"></canvas>
+        <div class="tip"></div>
+      </div>
+      <div class="panel">
+        <h2>データ</h2>
+        <div class="kv" id="facts"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+"use strict";
+const P = /*__PAYLOAD__*/null;
+
+const css = () => getComputedStyle(document.documentElement);
+const cvar = n => css().getPropertyValue(n).trim();
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const BIN_EDGES = [0.05, 0.1, 0.3, 1.0];
+const BIN_LABELS = ["< 0.05", "0.05 – 0.1", "0.1 – 0.3", "0.3 – 1", "≥ 1"];
+const doseBin = d => d < BIN_EDGES[0] ? 0 : d < BIN_EDGES[1] ? 1 : d < BIN_EDGES[2] ? 2 : d < BIN_EDGES[3] ? 3 : 4;
+
+/* ---------- 前計算: km座標 ---------- */
+const KX = 111.32 * Math.cos(36 * Math.PI / 180), KY = 110.57;
+const PTS = P.points.map(p => ({
+  x: p[0] * KX, y: p[1] * KY, e: p[2], dose: p[3], name: p[4], t: p[5], bin: doseBin(p[3]),
+}));
+const COAST = P.coast.map(line => line.map(([lon, lat]) => [lon * KX, lat * KY]));
+const maxElevPt = PTS.reduce((a, b) => a.e > b.e ? a : b);
+const maxDosePt = PTS.reduce((a, b) => a.dose > b.dose ? a : b);
+
+document.getElementById("subline").textContent =
+  `最新測定 ${P.latest_meas}（10分値）／ ${PTS.length.toLocaleString()}局を（経度・緯度・標高）の3D空間に配置`;
+document.getElementById("facts").innerHTML = [
+  ["局数", PTS.length.toLocaleString()],
+  ["最も高い局", `${esc(maxElevPt.name)}（${Math.round(maxElevPt.e)} m）`],
+  ["最大線量率", `${maxDosePt.dose.toFixed(2)} µSv/h`],
+  ["標高データ", "Copernicus DEM (90m)"],
+].map(([k, v]) => `<div><span>${k}</span><span>${v}</span></div>`).join("");
+
+/* ---------- 凡例 ---------- */
+function renderLegend() {
+  const counts = [0, 0, 0, 0, 0];
+  PTS.forEach(p => counts[p.bin]++);
+  document.getElementById("legend").innerHTML = BIN_LABELS.map((l, i) =>
+    `<div class="row2"><span class="sw" style="background:var(--bin-${i})"></span>${l}<span class="num">${counts[i].toLocaleString()}</span></div>`
+  ).join("");
+}
+
+/* ---------- ツールチップ ---------- */
+function tipOf(panel) {
+  const el = panel.querySelector(".tip");
+  return {
+    show(html, x, y) {
+      el.innerHTML = html; el.style.display = "block";
+      const r = panel.getBoundingClientRect();
+      el.style.left = Math.min(x + 14, r.width - el.offsetWidth - 8) + "px";
+      el.style.top = Math.max(4, y - el.offsetHeight - 10) + "px";
+    },
+    hide() { el.style.display = "none"; },
+  };
+}
+
+/* ---------- 3Dビュー ---------- */
+const canvas = document.getElementById("map3d");
+const ctx = canvas.getContext("2d");
+const tip3d = tipOf(document.getElementById("p3d"));
+const CX0 = PTS.reduce((s, p) => s + p.x, 0) / PTS.length;
+const CY0 = PTS.reduce((s, p) => s + p.y, 0) / PTS.length;
+const view = { yaw: -0.35, pitch: 0.95, scale: 0.42, cx: CX0, cy: CY0, ex: 35 };
+let hits = [];
+
+function project(x, y, z, w, h) {
+  const dx = x - view.cx, dy = y - view.cy;
+  const cY = Math.cos(view.yaw), sY = Math.sin(view.yaw);
+  const x1 = dx * cY - dy * sY, y1 = dx * sY + dy * cY;
+  const cP = Math.cos(view.pitch), sP = Math.sin(view.pitch);
+  return [w / 2 + x1 * view.scale,
+          h / 2 - (y1 * cP + z * sP) * view.scale,
+          y1 * sP - z * cP];               // 深度(大=奥)
+}
+
+function draw() {
+  const dpr = devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = cvar("--surface"); ctx.fillRect(0, 0, w, h);
+  const cols = [0,1,2,3,4].map(i => cvar(`--bin-${i}`)), surf = cvar("--surface");
+  const zk = view.ex / 1000;                     // 標高m → 強調km
+
+  /* 海岸線(地面 z=0) */
+  ctx.strokeStyle = cvar("--coast"); ctx.lineWidth = 1; ctx.beginPath();
+  for (const line of COAST) {
+    let first = true;
+    for (const [x, y] of line) {
+      const [sx, sy] = project(x, y, 0, w, h);
+      first ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy); first = false;
+    }
+  }
+  ctx.stroke();
+
+  /* 局: 奥から手前へ(painter) */
+  const proj = [];
+  for (const p of PTS) {
+    const [sx, sy, dep] = project(p.x, p.y, p.e * zk, w, h);
+    if (sx < -30 || sy < -30 || sx > w + 30 || sy > h + 30) continue;
+    proj.push([sx, sy, dep, p]);
+  }
+  proj.sort((a, b) => b[2] - a[2]);
+
+  /* 支柱(地面との対応が読めるように) */
+  ctx.lineWidth = 1; ctx.globalAlpha = 0.22;
+  for (const [sx, sy, , p] of proj) {
+    if (p.e * zk * view.scale < 3) continue;     // 画面上3px未満の支柱は省略
+    const [gx, gy] = project(p.x, p.y, 0, w, h);
+    ctx.strokeStyle = cols[p.bin];
+    ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(sx, sy); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  hits = [];
+  const r = Math.max(2.4, Math.min(4.5, view.scale * 6));
+  ctx.strokeStyle = surf; ctx.lineWidth = 1;
+  for (const [sx, sy, , p] of proj) {
+    ctx.fillStyle = cols[p.bin];
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, 6.2832); ctx.fill(); ctx.stroke();
+    hits.push([sx, sy, p]);
+  }
+
+  /* 方位(北)の目印 */
+  const [nx, ny] = project(view.cx, view.cy + 260, 0, w, h);
+  const [ox, oy] = project(view.cx, view.cy, 0, w, h);
+  const ang = Math.atan2(ny - oy, nx - ox);
+  ctx.save(); ctx.translate(w - 34, 34); ctx.rotate(ang + Math.PI / 2);
+  ctx.strokeStyle = cvar("--muted"); ctx.fillStyle = cvar("--muted");
+  ctx.beginPath(); ctx.moveTo(0, 12); ctx.lineTo(0, -8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(-4, -6); ctx.lineTo(4, -6); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = cvar("--muted"); ctx.font = "10px system-ui"; ctx.textAlign = "center";
+  ctx.fillText("北", w - 34, 58);
+}
+
+/* ---------- 操作 ---------- */
+let drag = null;
+canvas.addEventListener("pointerdown", e => {
+  drag = { x: e.clientX, y: e.clientY, pan: e.shiftKey };
+  canvas.classList.add("dragging"); canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", e => {
+  if (drag) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (drag.pan) {
+      const cY = Math.cos(-view.yaw), sY = Math.sin(-view.yaw);
+      const wx = dx / view.scale, wy = -dy / (view.scale * Math.max(Math.cos(view.pitch), 0.2));
+      view.cx -= wx * cY - wy * sY;
+      view.cy -= wx * sY + wy * cY;
+    } else {
+      view.yaw += dx * 0.006;
+      view.pitch = Math.min(1.5, Math.max(0.05, view.pitch + dy * 0.005));
+    }
+    drag.x = e.clientX; drag.y = e.clientY;
+    tip3d.hide(); draw(); return;
+  }
+  let best = null, bd = 13 * 13;
+  for (const hp of hits) {
+    const d = (hp[0] - e.offsetX) ** 2 + (hp[1] - e.offsetY) ** 2;
+    if (d < bd) { bd = d; best = hp; }
+  }
+  if (!best) { tip3d.hide(); return; }
+  const p = best[2];
+  tip3d.show(`<b>${esc(p.name)}</b>${p.dose.toFixed(4)} µSv/h <span class="s">(${p.t})</span><br><span class="s">標高 ${Math.round(p.e)} m</span>`,
+             e.offsetX, e.offsetY);
+});
+["pointerup", "pointercancel"].forEach(t => canvas.addEventListener(t, () => {
+  drag = null; canvas.classList.remove("dragging");
+}));
+canvas.addEventListener("pointerleave", tip3d.hide);
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  view.scale = Math.min(40, Math.max(0.12, view.scale * Math.exp(-e.deltaY * 0.0016)));
+  tip3d.hide(); draw();
+}, { passive: false });
+canvas.addEventListener("dblclick", () => {
+  view.yaw = -0.35; view.pitch = 0.95; view.scale = 0.42; view.cx = CX0; view.cy = CY0;
+  draw();
+});
+const exInput = document.getElementById("ex");
+exInput.addEventListener("input", () => {
+  view.ex = +exInput.value;
+  document.getElementById("exv").textContent = view.ex;
+  draw();
+});
+document.getElementById("exv").textContent = view.ex;
+
+/* ---------- 標高×線量 散布図 ---------- */
+const sc = document.getElementById("sc-elev");
+const tipSc = tipOf(document.getElementById("p-sc"));
+let scHits = [];
+function drawScatter() {
+  const dpr = devicePixelRatio || 1;
+  const w = sc.clientWidth, h = 240;
+  sc.width = w * dpr; sc.height = h * dpr;
+  const c = sc.getContext("2d");
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.fillStyle = cvar("--surface"); c.fillRect(0, 0, w, h);
+  const padL = 34, padB = 26, padT = 6, padR = 6;
+  const pw = w - padL - padR, ph = h - padT - padB;
+  const EMAX = 1400, LMIN = Math.log10(0.008), LMAX = Math.log10(8);
+  const X = e => padL + Math.min(e, EMAX) / EMAX * pw;
+  const Y = v => padT + ph - (Math.log10(Math.max(v, 0.008)) - LMIN) / (LMAX - LMIN) * ph;
+  c.strokeStyle = cvar("--grid"); c.fillStyle = cvar("--muted");
+  c.font = "10px system-ui"; c.textAlign = "center"; c.lineWidth = 1;
+  for (const t of [0, 500, 1000]) {
+    c.beginPath(); c.moveTo(X(t), padT); c.lineTo(X(t), padT + ph); c.stroke();
+    c.fillText(t, X(t), h - padB + 13);
+  }
+  for (const t of [0.01, 0.1, 1]) {
+    c.beginPath(); c.moveTo(padL, Y(t)); c.lineTo(padL + pw, Y(t)); c.stroke();
+    c.fillText(t, padL - 16, Y(t) + 3);
+  }
+  c.fillText("標高 m →", padL + pw / 2, h - 3);
+  scHits = [];
+  c.globalAlpha = 0.6; c.fillStyle = cvar("--pt");
+  for (const p of PTS) {
+    const x = X(p.e), y = Y(p.dose);
+    c.beginPath(); c.arc(x, y, 2, 0, 6.2832); c.fill();
+    scHits.push([x, y, p]);
+  }
+  c.globalAlpha = 1;
+}
+sc.addEventListener("pointermove", e => {
+  let best = null, bd = 10 * 10;
+  for (const hp of scHits) {
+    const d = (hp[0] - e.offsetX) ** 2 + (hp[1] - e.offsetY) ** 2;
+    if (d < bd) { bd = d; best = hp; }
+  }
+  if (!best) { tipSc.hide(); return; }
+  const p = best[2];
+  tipSc.show(`<b>${esc(p.name)}</b>${p.dose.toFixed(4)} µSv/h ／ 標高 ${Math.round(p.e)} m`,
+             e.offsetX + sc.offsetLeft, e.offsetY + sc.offsetTop);
+});
+sc.addEventListener("pointerleave", tipSc.hide);
+
+/* ---------- フッター・再描画 ---------- */
+document.getElementById("foot").innerHTML =
+  `データ出典: <a href="https://www.ramis.nra.go.jp/">放射線モニタリング情報共有・公表システム（原子力規制委員会）</a>（${P.generated_at.slice(0,10)} に利用）。` +
+  `標高: Open-Meteo Elevation API（Copernicus DEM GLO-90, ESA）。海岸線: Natural Earth。` +
+  `高さは選択倍率で強調表示（実寸ではない）。本ページは学習・研究用の試作。生成 ${P.generated_at}`;
+
+function repaint() { renderLegend(); draw(); drawScatter(); }
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", repaint);
+new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+window.addEventListener("resize", repaint);
+repaint();
+</script>

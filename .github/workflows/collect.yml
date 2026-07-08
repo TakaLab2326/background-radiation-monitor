@@ -1,0 +1,33 @@
+name: collect
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # 10分ごと(混雑時は数分遅延することがある)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: collect snapshot
+        run: python3 gha_collect.py
+      - name: commit data
+        run: |
+          git config user.name "collector-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add gha_data
+          git diff --cached --quiet && exit 0
+          git commit -m "data: $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do
+            git push && exit 0
+            git pull --rebase
+          done
+          exit 1

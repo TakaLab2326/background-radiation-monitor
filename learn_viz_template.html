@@ -1,0 +1,380 @@
+<meta charset="utf-8">
+<title>欠測補完の学習可視化（試作）</title>
+<style>
+  :root {
+    --page: #f9f9f7; --surface: #fcfcfb;
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --hairline: rgba(11,11,11,0.10); --coast: #c3c2b7;
+    --bin-0: #86b6ef; --bin-1: #5598e7; --bin-2: #2a78d6; --bin-3: #1c5cab; --bin-4: #0d366b;
+    --pt: #2a78d6; --under: #2a78d6; --over: #e34948; --neutral: #898781; --accent: #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #0d0d0d; --surface: #1a1a19;
+      --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --hairline: rgba(255,255,255,0.10); --coast: #4a4a46;
+      --bin-0: #184f95; --bin-1: #256abf; --bin-2: #3987e5; --bin-3: #86b6ef; --bin-4: #cde2fb;
+      --pt: #3987e5; --under: #3987e5; --over: #e66767; --neutral: #898781; --accent: #3987e5;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #0d0d0d; --surface: #1a1a19;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --hairline: rgba(255,255,255,0.10); --coast: #4a4a46;
+    --bin-0: #184f95; --bin-1: #256abf; --bin-2: #3987e5; --bin-3: #86b6ef; --bin-4: #cde2fb;
+    --pt: #3987e5; --under: #3987e5; --over: #e66767; --neutral: #898781; --accent: #3987e5;
+  }
+  :root[data-theme="light"] {
+    --page: #f9f9f7; --surface: #fcfcfb;
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --hairline: rgba(11,11,11,0.10); --coast: #c3c2b7;
+    --bin-0: #86b6ef; --bin-1: #5598e7; --bin-2: #2a78d6; --bin-3: #1c5cab; --bin-4: #0d366b;
+    --pt: #2a78d6; --under: #2a78d6; --over: #e34948; --neutral: #898781; --accent: #2a78d6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", sans-serif;
+    font-size: 14px; line-height: 1.6;
+  }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 24px 20px 40px; display: flex; flex-direction: column; gap: 16px; }
+  header .eyebrow { font-size: 11px; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; margin-bottom: 2px; }
+  header h1 { margin: 0; font-size: 22px; font-weight: 700; text-wrap: balance; }
+  header .sub { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+  .tile { background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px; padding: 10px 14px 12px; }
+  .tile .k { font-size: 11px; letter-spacing: .08em; color: var(--muted); }
+  .tile .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.25; }
+  .tile .v small { font-size: 12px; font-weight: 400; color: var(--ink-2); }
+  .tile .n { font-size: 11px; color: var(--ink-2); }
+
+  .panel { background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px; padding: 14px 16px; position: relative; }
+  .panel h2 { margin: 0 0 2px; font-size: 13px; font-weight: 700; }
+  .panel .note { font-size: 11px; color: var(--ink-2); margin: 0 0 10px; }
+  .row { display: flex; gap: 16px; align-items: stretch; flex-wrap: wrap; }
+  .row > .panel { flex: 1 1 320px; min-width: 0; }
+
+  canvas.plot { display: block; width: 100%; }
+  canvas.geo { display: block; width: 100%; height: 460px; cursor: grab; }
+
+  .legend-rows { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-2); margin-top: 8px; }
+  .legend-rows .row2 { display: flex; align-items: center; gap: 8px; }
+  .sw { width: 13px; height: 13px; border-radius: 50%; border: 1px solid var(--hairline); flex: 0 0 auto; }
+  .sw.dia { border-radius: 2px; transform: rotate(45deg) scale(.9); }
+
+  .tip {
+    position: absolute; pointer-events: none; display: none; z-index: 5;
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: 6px;
+    padding: 7px 10px; font-size: 12px; line-height: 1.5; max-width: 250px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.12);
+  }
+  .tip b { display: block; }
+  .tip .s { color: var(--ink-2); }
+
+  #imp { width: 100%; height: auto; display: block; }
+
+  footer { color: var(--muted); font-size: 11px; line-height: 1.7; border-top: 1px solid var(--grid); padding-top: 10px; }
+  footer a { color: var(--ink-2); }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">RAMIS — Imputation Learning, Prototype</div>
+    <h1>欠測補完は何を見て、どこまで当たるか</h1>
+    <div class="sub" id="subline"></div>
+  </header>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="row">
+    <div class="panel" id="p-idw">
+      <h2>予測 vs 実測 — IDW（近傍5局の距離加重平均）</h2>
+      <p class="note">対角線上＝完全一致。破線は±20%。両軸は対数。</p>
+      <canvas class="plot" id="sc-idw" height="340"></canvas>
+      <div class="tip"></div>
+    </div>
+    <div class="panel" id="p-gbm">
+      <h2>予測 vs 実測 — GBM（周辺＋地理＋風＋時刻）</h2>
+      <p class="note">各局は「学習に使わない状態」で予測（5-fold OOF）。</p>
+      <canvas class="plot" id="sc-gbm" height="340"></canvas>
+      <div class="tip"></div>
+    </div>
+    <div class="panel">
+      <h2>モデルは何を重視したか</h2>
+      <p class="note">並べ替え検証：その特徴を壊した時の予測悪化量（大きい＝重要）。</p>
+      <svg id="imp" viewBox="0 0 320 300" role="img" aria-label="特徴量重要度"></svg>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="panel" style="flex: 2 1 480px" id="p-err">
+      <h2>どこで外すか — GBM予測の誤差マップ</h2>
+      <p class="note">青＝実際より低く予測（過小）／赤＝高く予測（過大）。点の大きさ＝誤差の大きさ。±5%以内は灰の小点。ドラッグ移動・ホイール拡大。</p>
+      <canvas class="geo" id="map-err"></canvas>
+      <div class="tip"></div>
+      <div class="legend-rows" id="leg-err"></div>
+    </div>
+    <div class="panel" style="flex: 2 1 480px" id="p-miss">
+      <h2>本物の欠測局を予測で埋める（◆＝推定値）</h2>
+      <p class="note" id="miss-note"></p>
+      <canvas class="geo" id="map-miss"></canvas>
+      <div class="tip"></div>
+      <div class="legend-rows" id="leg-miss"></div>
+    </div>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+"use strict";
+const P = /*__PAYLOAD__*/null;
+
+const css = () => getComputedStyle(document.documentElement);
+const cvar = n => css().getPropertyValue(n).trim();
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const BIN_EDGES = [0.05, 0.1, 0.3, 1.0];
+const BIN_LABELS = ["< 0.05", "0.05 – 0.1", "0.1 – 0.3", "0.3 – 1", "≥ 1"];
+const doseBin = d => d < BIN_EDGES[0] ? 0 : d < BIN_EDGES[1] ? 1 : d < BIN_EDGES[2] ? 2 : d < BIN_EDGES[3] ? 3 : 4;
+const mercY = lat => Math.asinh(Math.tan(lat * Math.PI/180)) * 180/Math.PI;
+
+/* ---------- ヘッダー・タイル ---------- */
+document.getElementById("subline").textContent =
+  `評価断面 ${P.slot}（10分値・${P.n.toLocaleString()}局）／ 各局を隠して周辺から当てる人工マスク評価`;
+document.getElementById("tiles").innerHTML = [
+  {k:"IDW の平均誤差", v:`${P.mae.idw.toFixed(4)}<small> µSv/h</small>`, n:`中央値誤差 ${P.mae.idw_medpct.toFixed(1)}%`},
+  {k:"GBM の平均誤差", v:`${P.mae.gbm.toFixed(4)}<small> µSv/h</small>`, n:`中央値誤差 ${P.mae.gbm_medpct.toFixed(1)}%`},
+  {k:"評価した局", v:P.n.toLocaleString(), n:"全局が一度はテスト側になる(OOF)"},
+  {k:"予測で埋めた欠測局", v:P.missing_pred.length.toLocaleString(), n:"実際に故障・停止中の局"},
+].map(t => `<div class="tile"><div class="k">${t.k}</div><div class="v">${t.v}</div><div class="n">${t.n}</div></div>`).join("");
+
+/* ---------- 共通: パネル内ツールチップ ---------- */
+function tipOf(panel) {
+  const el = panel.querySelector(".tip");
+  return {
+    show(html, x, y) {
+      el.innerHTML = html; el.style.display = "block";
+      const r = panel.getBoundingClientRect();
+      el.style.left = Math.min(x + 14, r.width - el.offsetWidth - 8) + "px";
+      el.style.top = Math.max(4, y - el.offsetHeight - 10) + "px";
+    },
+    hide() { el.style.display = "none"; },
+  };
+}
+
+/* ---------- 散布図 ---------- */
+function scatter(canvasId, panelId, predIdx, mae) {
+  const canvas = document.getElementById(canvasId);
+  const panel = document.getElementById(panelId);
+  const tip = tipOf(panel);
+  const LMIN = Math.log10(0.008), LMAX = Math.log10(8);
+  let hits = [];
+
+  function draw() {
+    const dpr = devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = 340;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const padL = 40, padB = 30, padT = 8, padR = 8;
+    const pw = w - padL - padR, ph = h - padT - padB;
+    const X = v => padL + (Math.log10(Math.max(v, 0.008)) - LMIN) / (LMAX - LMIN) * pw;
+    const Y = v => padT + ph - (Math.log10(Math.max(v, 0.008)) - LMIN) / (LMAX - LMIN) * ph;
+    ctx.fillStyle = cvar("--surface"); ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = cvar("--grid"); ctx.fillStyle = cvar("--muted");
+    ctx.font = "10px system-ui"; ctx.textAlign = "center"; ctx.lineWidth = 1;
+    for (const t of [0.01, 0.1, 1]) {
+      ctx.beginPath(); ctx.moveTo(X(t), padT); ctx.lineTo(X(t), padT + ph); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(padL, Y(t)); ctx.lineTo(padL + pw, Y(t)); ctx.stroke();
+      ctx.fillText(t, X(t), h - padB + 14);
+      ctx.fillText(t, padL - 18, Y(t) + 3);
+    }
+    ctx.fillText("実測 µSv/h →", padL + pw/2, h - 4);
+    ctx.save(); ctx.translate(10, padT + ph/2); ctx.rotate(-Math.PI/2);
+    ctx.fillText("予測 µSv/h →", 0, 0); ctx.restore();
+
+    ctx.strokeStyle = cvar("--muted"); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(X(0.008), Y(0.008)); ctx.lineTo(X(8), Y(8)); ctx.stroke();
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(X(0.008), Y(0.008*1.2)); ctx.lineTo(X(8/1.2), Y(8)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(X(0.008*1.2), Y(0.008)); ctx.lineTo(X(8), Y(8/1.2)); ctx.stroke();
+    ctx.setLineDash([]);
+
+    hits = [];
+    ctx.fillStyle = cvar("--pt"); ctx.strokeStyle = cvar("--surface");
+    ctx.globalAlpha = 0.75;
+    for (const p of P.points) {
+      const x = X(p[2]), y = Y(p[predIdx]);
+      ctx.beginPath(); ctx.arc(x, y, 2.4, 0, 6.2832); ctx.fill();
+      hits.push([x, y, p]);
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = cvar("--ink"); ctx.font = "600 11px system-ui"; ctx.textAlign = "left";
+    ctx.fillText(`MAE ${mae.toFixed(4)} µSv/h`, padL + 8, padT + 14);
+  }
+
+  canvas.addEventListener("pointermove", e => {
+    let best = null, bd = 12 * 12;
+    for (const hp of hits) {
+      const d = (hp[0] - e.offsetX) ** 2 + (hp[1] - e.offsetY) ** 2;
+      if (d < bd) { bd = d; best = hp; }
+    }
+    if (!best) { tip.hide(); return; }
+    const p = best[2], err = (p[predIdx] / p[2] - 1) * 100;
+    tip.show(`<b>${esc(p[5])}</b>実測 ${p[2]} → 予測 ${p[predIdx]}<br><span class="s">誤差 ${err >= 0 ? "+" : ""}${err.toFixed(1)}%</span>`,
+             e.offsetX + canvas.offsetLeft, e.offsetY + canvas.offsetTop);
+  });
+  canvas.addEventListener("pointerleave", tip.hide);
+  return draw;
+}
+
+/* ---------- 特徴量重要度 ---------- */
+function drawImportance() {
+  const rows = P.importance;
+  const W = 320, RH = 26, H = rows.length * RH + 24;
+  const vmax = Math.max(...rows.map(r => r[1]));
+  const bw = 140;
+  let svg = "";
+  rows.forEach((r, i) => {
+    const y = 12 + i * RH, w = Math.max(2, r[1] / vmax * bw);
+    svg += `<text x="120" y="${y + 13}" font-size="11" fill="${cvar("--ink-2")}" text-anchor="end">${esc(r[0])}</text>`;
+    svg += `<rect x="128" y="${y + 3}" width="${w}" height="14" rx="3" fill="${cvar("--pt")}"><title>${esc(r[0])}: ${r[1]}</title></rect>`;
+    svg += `<text x="${132 + w}" y="${y + 14}" font-size="10" fill="${cvar("--muted")}">${r[1].toFixed(3)}</text>`;
+  });
+  const el = document.getElementById("imp");
+  el.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  el.innerHTML = svg;
+}
+
+/* ---------- 地図ファクトリ(パン・ズーム・ホバー共通) ---------- */
+function geoMap(canvasId, panelId, renderPts, hitHtml) {
+  const canvas = document.getElementById(canvasId);
+  const panel = document.getElementById(panelId);
+  const tip = tipOf(panel);
+  const view = { scale: 1, cx: 137, cy: mercY(38) };
+  let hits = [];
+
+  function fit() {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const lon0 = 127.5, lon1 = 146.2, la0 = mercY(25.8), la1 = mercY(45.8);
+    view.scale = Math.min(w / (lon1 - lon0), h / (la1 - la0)) * 0.94;
+    view.cx = (lon0 + lon1) / 2; view.cy = (la0 + la1) / 2;
+  }
+  const S = (lon, lat) => [
+    canvas.clientWidth / 2 + (lon - view.cx) * view.scale,
+    canvas.clientHeight / 2 - (mercY(lat) - view.cy) * view.scale];
+
+  function draw() {
+    const dpr = devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = cvar("--surface"); ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = cvar("--coast"); ctx.lineWidth = 1; ctx.beginPath();
+    for (const line of P.coast) {
+      let first = true;
+      for (const [lon, lat] of line) {
+        const [x, y] = S(lon, lat);
+        first ? ctx.moveTo(x, y) : ctx.lineTo(x, y); first = false;
+      }
+    }
+    ctx.stroke();
+    hits = renderPts(ctx, S, w, h);
+  }
+
+  let drag = null;
+  canvas.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener("pointermove", e => {
+    if (drag) {
+      view.cx -= (e.clientX - drag.x) / view.scale; view.cy += (e.clientY - drag.y) / view.scale;
+      drag = { x: e.clientX, y: e.clientY }; tip.hide(); draw(); return;
+    }
+    let best = null, bd = 13 * 13;
+    for (const hp of hits) {
+      const d = (hp[0] - e.offsetX) ** 2 + (hp[1] - e.offsetY) ** 2;
+      if (d < bd) { bd = d; best = hp; }
+    }
+    if (!best) { tip.hide(); return; }
+    tip.show(hitHtml(best[2]), e.offsetX + canvas.offsetLeft, e.offsetY + canvas.offsetTop);
+  });
+  ["pointerup", "pointercancel"].forEach(t => canvas.addEventListener(t, () => { drag = null; }));
+  canvas.addEventListener("pointerleave", tip.hide);
+  canvas.addEventListener("wheel", e => {
+    e.preventDefault();
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const gx = view.cx + (e.offsetX - w/2) / view.scale, gy = view.cy - (e.offsetY - h/2) / view.scale;
+    view.scale = Math.min(12000, Math.max(8, view.scale * Math.exp(-e.deltaY * 0.0016)));
+    view.cx = gx - (e.offsetX - w/2) / view.scale; view.cy = gy + (e.offsetY - h/2) / view.scale;
+    tip.hide(); draw();
+  }, { passive: false });
+
+  fit();
+  return draw;
+}
+
+/* ---------- 誤差マップ ---------- */
+const drawErr = geoMap("map-err", "p-err", (ctx, S, w, h) => {
+  const hits = [];
+  const under = cvar("--under"), over = cvar("--over"), neutral = cvar("--neutral"), surf = cvar("--surface");
+  for (const p of P.points) {
+    const err = p[4] / p[2] - 1;
+    const [x, y] = S(p[0], p[1]);
+    if (x < -20 || y < -20 || x > w + 20 || y > h + 20) continue;
+    const mag = Math.min(Math.abs(err), 0.5);
+    const r = Math.abs(err) <= 0.05 ? 1.8 : 2.4 + 4 * mag / 0.5;
+    ctx.fillStyle = Math.abs(err) <= 0.05 ? neutral : (err > 0 ? over : under);
+    ctx.strokeStyle = surf; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill(); ctx.stroke();
+    hits.push([x, y, p]);
+  }
+  return hits;
+}, p => {
+  const err = (p[4] / p[2] - 1) * 100;
+  return `<b>${esc(p[5])}</b>実測 ${p[2]} → GBM ${p[4]} µSv/h<br><span class="s">誤差 ${err >= 0 ? "+" : ""}${err.toFixed(1)}%</span>`;
+});
+document.getElementById("leg-err").innerHTML =
+  `<div class="row2"><span class="sw" style="background:var(--under)"></span>過小予測（実際より低く見積り）</div>` +
+  `<div class="row2"><span class="sw" style="background:var(--neutral);width:9px;height:9px;margin:0 2px"></span>±5%以内</div>` +
+  `<div class="row2"><span class="sw" style="background:var(--over)"></span>過大予測（実際より高く見積り）</div>`;
+
+/* ---------- 欠測局の補完マップ ---------- */
+const drawMiss = geoMap("map-miss", "p-miss", (ctx, S, w, h) => {
+  const hits = [];
+  const cols = [0,1,2,3,4].map(i => cvar(`--bin-${i}`)), surf = cvar("--surface");
+  for (const mrec of P.missing_pred) {
+    const [x, y] = S(mrec[0], mrec[1]);
+    if (x < -20 || y < -20 || x > w + 20 || y > h + 20) continue;
+    ctx.fillStyle = cols[doseBin(mrec[2])];
+    ctx.strokeStyle = surf; ctx.lineWidth = 1;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4);
+    ctx.beginPath(); ctx.rect(-3.4, -3.4, 6.8, 6.8); ctx.fill(); ctx.stroke();
+    ctx.restore();
+    hits.push([x, y, mrec]);
+  }
+  return hits;
+}, mrec =>
+  `<b>◆ ${esc(mrec[3])}</b>予測 ${mrec[2]} µSv/h（欠測中）<br>` +
+  `<span class="s">最寄りの生存局まで ${mrec[5]} km${mrec[4] ? `<br>最終実測 ${mrec[4]}` : ""}</span>`);
+document.getElementById("leg-miss").innerHTML =
+  BIN_LABELS.map((l, i) => `<div class="row2"><span class="sw dia" style="background:var(--bin-${i})"></span>${l} µSv/h（推定）</div>`).join("");
+document.getElementById("miss-note").textContent =
+  `現在故障・停止中の${P.missing_pred.length}局を、周辺の生存局からIDWで推定した値。実測ではない点に注意。最寄り生存局が遠い局ほど不確か。`;
+
+/* ---------- フッター・再描画 ---------- */
+document.getElementById("foot").innerHTML =
+  `データ出典: <a href="https://www.ramis.nra.go.jp/">放射線モニタリング情報共有・公表システム（原子力規制委員会）</a>（${P.generated_at.slice(0,10)} に利用）。` +
+  `評価は人工マスク方式（値の分かっている局を隠して予測し正解と比較）。GBM=勾配ブースティング決定木。` +
+  `降水特徴は雨天データ未蓄積のため本評価では効いていない。海岸線: Natural Earth。` +
+  `本ページは学習・研究用の試作。生成 ${P.generated_at}`;
+
+const drawIdw = scatter("sc-idw", "p-idw", 3, P.mae.idw);
+const drawGbm = scatter("sc-gbm", "p-gbm", 4, P.mae.gbm);
+function repaint() { drawIdw(); drawGbm(); drawImportance(); drawErr(); drawMiss(); }
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", repaint);
+new MutationObserver(repaint).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+window.addEventListener("resize", repaint);
+repaint();
+</script>

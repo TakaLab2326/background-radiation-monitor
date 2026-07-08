@@ -1,0 +1,437 @@
+<meta charset="utf-8">
+<title>全国 空間線量率マップ（試作）</title>
+<style>
+  :root {
+    --page: #f9f9f7; --surface: #fcfcfb;
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --hairline: rgba(11,11,11,0.10);
+    --bin-0: #86b6ef; --bin-1: #5598e7; --bin-2: #2a78d6; --bin-3: #1c5cab; --bin-4: #0d366b;
+    --rain: #1baf7a; --accent: #2a78d6; --coast: #c3c2b7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #0d0d0d; --surface: #1a1a19;
+      --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --hairline: rgba(255,255,255,0.10);
+      --bin-0: #184f95; --bin-1: #256abf; --bin-2: #3987e5; --bin-3: #86b6ef; --bin-4: #cde2fb;
+      --rain: #199e70; --accent: #3987e5; --coast: #4a4a46;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #0d0d0d; --surface: #1a1a19;
+    --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --hairline: rgba(255,255,255,0.10);
+    --bin-0: #184f95; --bin-1: #256abf; --bin-2: #3987e5; --bin-3: #86b6ef; --bin-4: #cde2fb;
+    --rain: #199e70; --accent: #3987e5; --coast: #4a4a46;
+  }
+  :root[data-theme="light"] {
+    --page: #f9f9f7; --surface: #fcfcfb;
+    --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --hairline: rgba(11,11,11,0.10);
+    --bin-0: #86b6ef; --bin-1: #5598e7; --bin-2: #2a78d6; --bin-3: #1c5cab; --bin-4: #0d366b;
+    --rain: #1baf7a; --accent: #2a78d6; --coast: #c3c2b7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", sans-serif;
+    font-size: 14px; line-height: 1.6;
+  }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 24px 20px 40px; display: flex; flex-direction: column; gap: 16px; }
+
+  header .eyebrow {
+    font-size: 11px; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; margin-bottom: 2px;
+  }
+  header h1 { margin: 0; font-size: 22px; font-weight: 700; text-wrap: balance; }
+  header .sub { color: var(--ink-2); font-size: 13px; margin-top: 2px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .tile {
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px;
+    padding: 10px 14px 12px;
+  }
+  .tile .k { font-size: 11px; letter-spacing: .08em; color: var(--muted); }
+  .tile .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.25; }
+  .tile .v small { font-size: 12px; font-weight: 400; color: var(--ink-2); }
+  .tile .n { font-size: 11px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .filters { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; font-size: 13px; color: var(--ink-2); }
+  .filters label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+  .filters input { accent-color: var(--accent); }
+
+  .main { display: flex; gap: 16px; align-items: stretch; }
+  .mapbox {
+    position: relative; flex: 1 1 auto; min-width: 0;
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px; overflow: hidden;
+  }
+  #map { display: block; width: 100%; height: 640px; cursor: grab; touch-action: none; }
+  #map.dragging { cursor: grabbing; }
+  .zoomctl { position: absolute; top: 10px; left: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .zoomctl button {
+    width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--hairline);
+    background: var(--surface); color: var(--ink); font-size: 16px; cursor: pointer;
+  }
+  .zoomctl button:hover { background: var(--page); }
+  .zoomctl button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  #tooltip {
+    position: absolute; pointer-events: none; display: none; z-index: 5;
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: 6px;
+    padding: 7px 10px; font-size: 12px; line-height: 1.5; max-width: 260px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.12);
+  }
+  #tooltip .t-name { font-weight: 700; }
+  #tooltip .t-val { font-variant-numeric: tabular-nums; }
+  #tooltip .t-sub { color: var(--ink-2); }
+
+  .side { flex: 0 0 300px; display: flex; flex-direction: column; gap: 12px; }
+  .panel { background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px; padding: 12px 14px; }
+  .panel h2 { margin: 0 0 8px; font-size: 12px; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+
+  .legend-rows { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-2); }
+  .legend-rows .row { display: flex; align-items: center; gap: 8px; }
+  .sw { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--hairline); flex: 0 0 auto; }
+  .sw.ring { background: transparent; border: 2.5px solid var(--rain); }
+  .sw.xmark { border: none; position: relative; }
+  .sw.xmark::before { content: "✕"; color: var(--muted); font-size: 13px; font-weight: 700; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); }
+  .legend-rows .num { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+  #hist { width: 100%; height: auto; display: block; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--grid); padding: 3px 4px; }
+  td { padding: 3px 4px; border-bottom: 1px solid var(--grid); }
+  td.val { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+  td.tm { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  td .nm { display: block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  footer { color: var(--muted); font-size: 11px; line-height: 1.7; border-top: 1px solid var(--grid); padding-top: 10px; }
+  footer a { color: var(--ink-2); }
+
+  @media (max-width: 900px) {
+    .main { flex-direction: column; }
+    .side { flex: 1 1 auto; }
+    #map { height: 480px; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">RAMIS Snapshot — Prototype</div>
+    <h1>全国 空間線量率マップ（試作）</h1>
+    <div class="sub" id="subline">読み込み中…</div>
+  </header>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="filters" id="filters">
+    <span style="letter-spacing:.08em;font-size:11px;color:var(--muted)">表示レイヤー</span>
+    <label><input type="checkbox" data-layer="1" checked> モニタリングポスト</label>
+    <label><input type="checkbox" data-layer="2" checked> リアルタイム線量測定システム</label>
+    <label><input type="checkbox" data-layer="3" checked> その他</label>
+    <label><input type="checkbox" data-layer="miss" checked> 欠測局 ✕</label>
+    <label><input type="checkbox" data-layer="rain" checked> 降水中リング</label>
+  </div>
+
+  <div class="main">
+    <div class="mapbox">
+      <canvas id="map"></canvas>
+      <div class="zoomctl">
+        <button id="zin" aria-label="拡大">＋</button>
+        <button id="zout" aria-label="縮小">－</button>
+        <button id="zfit" aria-label="全体表示" style="font-size:11px">全体</button>
+      </div>
+      <div id="tooltip"></div>
+    </div>
+
+    <div class="side">
+      <div class="panel">
+        <h2>空間線量率 µSv/h</h2>
+        <div class="legend-rows" id="legend"></div>
+      </div>
+      <div class="panel">
+        <h2>線量率の分布（対数目盛）</h2>
+        <svg id="hist" viewBox="0 0 272 110" role="img" aria-label="線量率ヒストグラム"></svg>
+      </div>
+      <div class="panel">
+        <h2>線量率の高い局 上位10</h2>
+        <table id="top10">
+          <thead><tr><th>局名</th><th style="text-align:right">µSv/h</th><th>測定時刻</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+"use strict";
+const P = /*__PAYLOAD__*/null;
+
+/* ---------- 定数 ---------- */
+const BIN_EDGES = [0.05, 0.1, 0.3, 1.0];           // µSv/h 5ビン
+const BIN_LABELS = ["< 0.05", "0.05 – 0.1", "0.1 – 0.3", "0.3 – 1", "≥ 1"];
+const TYPE_NAMES = {1:"モニタリングポスト", 2:"リアルタイム線量測定システム", 3:"その他"};
+
+const css = () => getComputedStyle(document.documentElement);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const binColors = () => [0,1,2,3,4].map(i => css().getPropertyValue(`--bin-${i}`).trim());
+const doseBin = d => d < BIN_EDGES[0] ? 0 : d < BIN_EDGES[1] ? 1 : d < BIN_EDGES[2] ? 2 : d < BIN_EDGES[3] ? 3 : 4;
+
+/* ---------- データ ---------- */
+// stations: [lon, lat, dose, type, name, "MM-DD HH:MM", windDir, windSpeed, precip]
+const ST = P.stations, MISS = P.missing, COAST = P.coast;
+
+/* ---------- 統計タイル ---------- */
+const doses = ST.map(s => s[2]).sort((a,b)=>a-b);
+const median = doses[Math.floor(doses.length/2)];
+const maxSt = ST.reduce((a,b) => a[2] > b[2] ? a : b);
+const rainN = ST.filter(s => s[8] > 0).length;
+document.getElementById("tiles").innerHTML = [
+  {k:"観測局（線量率あり）", v:ST.length.toLocaleString(), n:"モニタリングポスト＋リアモニ等"},
+  {k:"全国中央値", v:`${median.toFixed(3)}<small> µSv/h</small>`, n:"半数の局はこれ以下"},
+  {k:"最大値", v:`${maxSt[2].toFixed(2)}<small> µSv/h</small>`, n:esc(maxSt[4])},
+  {k:"欠測局", v:MISS.length.toLocaleString(), n:"故障・停止などで値なし"},
+  {k:"降水を観測中", v:rainN.toLocaleString(), n:`気象センサ付き ${ST.filter(s=>s[8]>=0).length} 局のうち`},
+].map(t => `<div class="tile"><div class="k">${t.k}</div><div class="v">${t.v}</div><div class="n">${t.n}</div></div>`).join("");
+
+document.getElementById("subline").textContent =
+  `最新測定 ${P.latest_meas}（10分値）／ 全国 ${(ST.length + MISS.length).toLocaleString()} 局のスナップショット`;
+
+/* ---------- 凡例 ---------- */
+function renderLegend() {
+  const cols = binColors();
+  const counts = [0,0,0,0,0];
+  ST.forEach(s => counts[doseBin(s[2])]++);
+  document.getElementById("legend").innerHTML =
+    BIN_LABELS.map((l,i) =>
+      `<div class="row"><span class="sw" style="background:${cols[i]}"></span>${l}<span class="num">${counts[i].toLocaleString()}</span></div>`
+    ).join("") +
+    `<div class="row" style="margin-top:6px"><span class="sw xmark"></span>欠測局<span class="num">${MISS.length}</span></div>` +
+    `<div class="row"><span class="sw ring"></span>降水中（> 0 mm）<span class="num">${rainN}</span></div>`;
+}
+
+/* ---------- 上位10テーブル ---------- */
+{
+  const seen = new Set();
+  const rows = [];
+  for (const s of [...ST].sort((a,b)=>b[2]-a[2])) {
+    if (seen.has(s[4])) continue;   // 同一地点の別装置は最高値のみ
+    seen.add(s[4]); rows.push(s);
+    if (rows.length >= 10) break;
+  }
+  document.querySelector("#top10 tbody").innerHTML = rows.map(s =>
+    `<tr><td><span class="nm" title="${esc(s[4])}">${esc(s[4])}</span></td><td class="val">${s[2].toFixed(2)}</td><td class="tm">${s[5].slice(6)}</td></tr>`
+  ).join("");
+}
+
+/* ---------- ヒストグラム（対数ビン） ---------- */
+function renderHist() {
+  const cols = binColors(), ink2 = css().getPropertyValue("--ink-2").trim(),
+        grid = css().getPropertyValue("--grid").trim(), muted = css().getPropertyValue("--muted").trim();
+  const LMIN = Math.log10(0.008), LMAX = Math.log10(12), NB = 28;
+  const bins = new Array(NB).fill(0);
+  ST.forEach(s => {
+    const l = Math.log10(Math.max(s[2], 0.008));
+    bins[Math.min(NB-1, Math.max(0, Math.floor((l-LMIN)/(LMAX-LMIN)*NB)))]++;
+  });
+  const W = 272, H = 110, padB = 18, padT = 12, bw = W/NB;
+  const ymax = Math.max(...bins);
+  let svg = "";
+  const ticks = [0.01, 0.1, 1, 10];
+  ticks.forEach(t => {
+    const x = (Math.log10(t)-LMIN)/(LMAX-LMIN)*W;
+    svg += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${H-padB}" stroke="${grid}" stroke-width="1"/>`;
+    svg += `<text x="${x}" y="${H-5}" font-size="9" fill="${muted}" text-anchor="middle">${t}</text>`;
+  });
+  bins.forEach((n,i) => {
+    if (!n) return;
+    const h = Math.max(2, (H-padB-padT) * n/ymax);
+    const midDose = Math.pow(10, LMIN + (i+0.5)/NB*(LMAX-LMIN));
+    const x = i*bw;
+    svg += `<rect x="${x+1}" y="${H-padB-h}" width="${bw-2}" height="${h}" rx="2" fill="${cols[doseBin(midDose)]}">` +
+           `<title>${Math.pow(10, LMIN+i/NB*(LMAX-LMIN)).toFixed(3)}–${Math.pow(10, LMIN+(i+1)/NB*(LMAX-LMIN)).toFixed(3)} µSv/h: ${n}局</title></rect>`;
+  });
+  svg += `<line x1="0" y1="${H-padB}" x2="${W}" y2="${H-padB}" stroke="${ink2}" stroke-width="1"/>`;
+  document.getElementById("hist").innerHTML = svg;
+}
+
+/* ---------- 地図 ---------- */
+const canvas = document.getElementById("map");
+const ctx = canvas.getContext("2d");
+const box = canvas.parentElement;
+const mercY = lat => Math.asinh(Math.tan(lat * Math.PI/180)) * 180/Math.PI; // 度単位に揃える(x軸と同一スケール)
+let view = {scale: 1, cx: 137, cy: mercY(38)};   // 画面中心の投影座標
+
+function fitJapan() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const lon0 = 127.5, lon1 = 146.2, lat0 = 25.8, lat1 = 45.8;
+  view.scale = Math.min(w/(lon1-lon0), h/(mercY(lat1)-mercY(lat0))) * 0.94;
+  view.cx = (lon0+lon1)/2; view.cy = (mercY(lat0)+mercY(lat1))/2;
+}
+const toScreen = (lon, lat) => [
+  canvas.clientWidth/2 + (lon - view.cx) * view.scale,
+  canvas.clientHeight/2 - (mercY(lat) - view.cy) * view.scale,
+];
+
+const layers = {1:true, 2:true, 3:true, miss:true, rain:true};
+let screenPts = [];   // ヒットテスト用 [x, y, ref, isMissing]
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== w*dpr) { canvas.width = w*dpr; canvas.height = h*dpr; }
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const cols = binColors(), surface = css().getPropertyValue("--surface").trim(),
+        gridc = css().getPropertyValue("--grid").trim(), muted = css().getPropertyValue("--muted").trim(),
+        rainc = css().getPropertyValue("--rain").trim();
+  ctx.fillStyle = surface; ctx.fillRect(0,0,w,h);
+
+  /* 海岸線 */
+  ctx.strokeStyle = css().getPropertyValue("--coast").trim(); ctx.lineWidth = 1; ctx.beginPath();
+  for (const line of COAST) {
+    let first = true;
+    for (const [lon,lat] of line) {
+      const [x,y] = toScreen(lon,lat);
+      first ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+      first = false;
+    }
+  }
+  ctx.stroke();
+
+  screenPts = [];
+  const r = Math.max(2.6, Math.min(4.5, view.scale/14));
+
+  /* 降水リング(点の下に描く) */
+  if (layers.rain) {
+    ctx.strokeStyle = rainc; ctx.lineWidth = 2;
+    for (const s of ST) {
+      if (!(layers[s[3]] && s[8] > 0)) continue;
+      const [x,y] = toScreen(s[0], s[1]);
+      if (x<-20||y<-20||x>w+20||y>h+20) continue;
+      ctx.beginPath(); ctx.arc(x, y, r+2.8, 0, 6.2832); ctx.stroke();
+    }
+  }
+
+  /* 観測点(低ビン→高ビンの順で描き、高い値を前面に) */
+  for (let b = 0; b <= 4; b++) {
+    ctx.fillStyle = cols[b];
+    ctx.strokeStyle = surface; ctx.lineWidth = 1;
+    for (const s of ST) {
+      if (!layers[s[3]] || doseBin(s[2]) !== b) continue;
+      const [x,y] = toScreen(s[0], s[1]);
+      if (x<-20||y<-20||x>w+20||y>h+20) continue;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832);
+      ctx.fill(); ctx.stroke();
+      screenPts.push([x, y, s, false]);
+    }
+  }
+
+  /* 欠測局 ✕ */
+  if (layers.miss) {
+    ctx.strokeStyle = muted; ctx.lineWidth = 1.6;
+    const a = r + 0.6;
+    for (const m of MISS) {
+      const [x,y] = toScreen(m[0], m[1]);
+      if (x<-20||y<-20||x>w+20||y>h+20) continue;
+      ctx.beginPath();
+      ctx.moveTo(x-a,y-a); ctx.lineTo(x+a,y+a);
+      ctx.moveTo(x+a,y-a); ctx.lineTo(x-a,y+a);
+      ctx.stroke();
+      screenPts.push([x, y, m, true]);
+    }
+  }
+}
+
+/* ---------- 操作 ---------- */
+let drag = null;
+canvas.addEventListener("pointerdown", e => {
+  drag = {x: e.clientX, y: e.clientY, moved: false};
+  canvas.classList.add("dragging");
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", e => {
+  if (drag) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true;
+    view.cx -= dx / view.scale; view.cy += dy / view.scale;
+    drag.x = e.clientX; drag.y = e.clientY;
+    hideTip(); draw();
+  } else {
+    hover(e);
+  }
+});
+["pointerup","pointercancel"].forEach(t => canvas.addEventListener(t, () => {
+  drag = null; canvas.classList.remove("dragging");
+}));
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * 0.0016));
+}, {passive: false});
+
+function zoomAt(px, py, f) {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const gx = view.cx + (px - w/2)/view.scale, gy = view.cy - (py - h/2)/view.scale;
+  view.scale = Math.min(12000, Math.max(8, view.scale * f));
+  view.cx = gx - (px - w/2)/view.scale; view.cy = gy + (py - h/2)/view.scale;
+  hideTip(); draw();
+}
+document.getElementById("zin").onclick  = () => zoomAt(canvas.clientWidth/2, canvas.clientHeight/2, 1.6);
+document.getElementById("zout").onclick = () => zoomAt(canvas.clientWidth/2, canvas.clientHeight/2, 1/1.6);
+document.getElementById("zfit").onclick = () => { fitJapan(); hideTip(); draw(); };
+
+/* ---------- ツールチップ ---------- */
+const tip = document.getElementById("tooltip");
+function hideTip(){ tip.style.display = "none"; }
+function hover(e) {
+  const mx = e.offsetX, my = e.offsetY;
+  let best = null, bd = 14*14;
+  for (const p of screenPts) {
+    const d = (p[0]-mx)**2 + (p[1]-my)**2;
+    if (d < bd) { bd = d; best = p; }
+  }
+  if (!best) { hideTip(); return; }
+  const [,, s, isMiss] = best;
+  let html;
+  if (isMiss) {
+    html = `<div class="t-name">✕ ${esc(s[2])}</div><div class="t-sub">欠測中（値なし）</div>` +
+           (s[3] ? `<div class="t-sub">最終データ: ${s[3]}</div>` : "");
+  } else {
+    html = `<div class="t-name">${esc(s[4])}</div>` +
+           `<div class="t-val">${s[2].toFixed(4)} µSv/h <span class="t-sub">(${s[5]})</span></div>` +
+           `<div class="t-sub">${TYPE_NAMES[s[3]] || ""}</div>`;
+    if (s[7] >= 0) html += `<div class="t-sub">風 ${s[6] || "—"} ${s[7]} m/s ／ 降水 ${s[8] >= 0 ? s[8] : "—"} mm</div>`;
+  }
+  tip.innerHTML = html;
+  tip.style.display = "block";
+  const bw = tip.offsetWidth, bh = tip.offsetHeight;
+  tip.style.left = Math.min(mx + 14, canvas.clientWidth - bw - 6) + "px";
+  tip.style.top  = Math.max(6, my - bh - 10) + "px";
+}
+canvas.addEventListener("pointerleave", hideTip);
+
+/* ---------- レイヤートグル ---------- */
+document.getElementById("filters").addEventListener("change", e => {
+  const k = e.target.dataset.layer;
+  layers[k === "1" || k === "2" || k === "3" ? +k : k] = e.target.checked;
+  draw();
+});
+
+/* ---------- テーマ変更・リサイズで再描画 ---------- */
+function repaintAll(){ renderLegend(); renderHist(); draw(); }
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", repaintAll);
+new MutationObserver(repaintAll).observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]});
+window.addEventListener("resize", () => { draw(); });
+
+/* ---------- フッター ---------- */
+document.getElementById("foot").innerHTML =
+  `データ出典: <a href="https://www.ramis.nra.go.jp/">放射線モニタリング情報共有・公表システム（原子力規制委員会）</a>（${P.generated_at.slice(0,10)} に利用）。` +
+  `単位 µSv/h＝マイクロシーベルト毎時。日本の平常時の空間線量率はおおむね 0.02〜0.1 µSv/h。` +
+  `海岸線: Natural Earth（dataofjapan/land 経由）。` +
+  `本ページは学習・研究用の試作で、公式の公表資料ではありません。生成 ${P.generated_at}`;
+
+fitJapan(); repaintAll();
+</script>

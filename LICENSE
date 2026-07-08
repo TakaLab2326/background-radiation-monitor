@@ -1,0 +1,32 @@
+MIT License
+
+Copyright (c) 2026 TakaLab2326
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+データについて / About the data
+
+このリポジトリの gha_data/ に含まれる測定データの出典:
+- 放射線モニタリング情報共有・公表システム(原子力規制委員会) https://www.ramis.nra.go.jp/
+- 気象庁 高解像度降水ナウキャスト https://www.jma.go.jp/
+- 標高: Open-Meteo Elevation API (Copernicus DEM GLO-90, ESA)
+- 海岸線: Natural Earth (dataofjapan/land 経由)
+利用の際は各出典を明示してください。本リポジトリは学習・研究用の非公式プロジェクトであり、
+原子力規制委員会・気象庁とは無関係です。防災判断には必ず公式情報を使用してください。

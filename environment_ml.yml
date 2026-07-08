@@ -1,0 +1,12 @@
+name: ramis_ml
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pandas
+  - lightgbm
+  - scikit-learn
+  - xgboost
+  - flaml
+  - scipy
+prefix: /opt/anaconda3/envs/ramis_ml
