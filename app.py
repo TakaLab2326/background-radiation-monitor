@@ -68,9 +68,11 @@ def load_data():
         stations[c] = pd.to_numeric(stations[c], errors="coerce")
     meas = meas.join(stations[["display_name", "pref_code", "latitude", "longitude",
                                "elevation"]], on="station_id")
-    for c in ("air_dose_rate", "wind_speed", "precipitation"):
+    for c in ("air_dose_rate", "wind_speed", "precipitation", "counting_rate",
+              "solar_amount"):
         meas[c] = pd.to_numeric(meas[c], errors="coerce")
     meas["data_type"] = pd.to_numeric(meas.data_type, errors="coerce").astype("Int64")
+    meas.loc[meas.solar_amount < 0, "solar_amount"] = np.nan   # -99等は欠測記号
     meas = meas.dropna(subset=["latitude", "air_dose_rate"])
     meas = meas[meas.air_dose_rate > 0]
     meas["t"] = pd.to_datetime(meas.meas_datetime)
@@ -108,60 +110,95 @@ st.title("📡 選んで学ぶ 放射線モニタリング")
 st.caption("全国の空間線量率(10分値)を選んで可視化し、そのまま機械学習を体験できます。"
            "データは10分ごとに自動収集(GitHub Actions)。")
 
-tab_viz, tab_ml, tab_about = st.tabs(["② 可視化", "③ 機械学習を体験", "仕組みと出典"])
+PAGES = ["② 可視化", "③ 機械学習を体験", "仕組みと出典"]
+page = st.radio("ページ", PAGES, horizontal=True, key="page",
+                label_visibility="collapsed")
 
 # ---------------- 可視化 ----------------
-with tab_viz:
+if page == PAGES[0]:
     if sel.empty:
         st.warning("選択条件に合うデータがありません。条件を広げてください。")
         st.stop()
-    latest = sel.sort_values("meas_datetime").groupby("station_id").tail(1)
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("局数", f"{len(latest):,}")
-    c2.metric("中央値", f"{latest.air_dose_rate.median():.3f} µSv/h")
-    c3.metric("最大", f"{latest.air_dose_rate.max():.2f} µSv/h")
-    c4.metric("最新測定", latest.meas_datetime.max()[5:16].replace("T", " "))
 
-    pts = latest.assign(
-        color=latest.air_dose_rate.map(lambda v: BIN_COLORS[dose_bin(v)]),
-        dose=latest.air_dose_rate.round(4),
-        name=latest.display_name.fillna(latest.station_id))
+    VARS = {"空間線量率 (µSv/h)": "air_dose_rate", "風速 (m/s)": "wind_speed",
+            "降水量 (mm)": "precipitation", "日射量": "solar_amount",
+            "計数率 (cpm)": "counting_rate", "標高 (m)": "elevation"}
+    vlabel = st.selectbox("表示する項目(モニタリング値のほか気象・地形も選べます)",
+                          list(VARS), key="var")
+    vcol = VARS[vlabel]
+
+    latest = sel.sort_values("meas_datetime").groupby("station_id").tail(1).copy()
+    latest["val"] = latest[vcol]
+    shown = latest.dropna(subset=["val"])
+    if shown.empty:
+        st.warning(f"「{vlabel}」の値を持つ局が選択範囲にありません。"
+                   "気象の項目はセンサ付きの局(全体の1〜2割)だけが持っています。")
+        st.stop()
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("値のある局", f"{len(shown):,} / {len(latest):,}")
+    c2.metric("中央値", f"{shown.val.median():.3g}")
+    c3.metric("最大", f"{shown.val.max():.3g}")
+    c4.metric("最新測定", shown.meas_datetime.max()[5:16].replace("T", " "))
+
+    # 色分け: 線量率は固定しきい値、その他は五分位(データに合わせて自動)
+    if vcol == "air_dose_rate":
+        edges = list(BIN_EDGES)
+    elif shown.val.nunique() <= 1:
+        edges = []
+    else:
+        edges = sorted(set(float(q) for q in
+                           np.quantile(shown.val, [0.2, 0.4, 0.6, 0.8])))
+    colors = BIN_COLORS[:len(edges) + 1] if edges else [BIN_COLORS[2]]
+
+    def color_of(v):
+        return colors[min(int(np.searchsorted(edges, v, side="right")),
+                          len(colors) - 1)] if edges else colors[0]
+
+    pts = shown.assign(color=shown.val.map(color_of),
+                       v=shown.val.map(lambda x: f"{x:.4g}"),
+                       name=shown.display_name.fillna(shown.station_id))
     st.pydeck_chart(pdk.Deck(
         initial_view_state=pdk.ViewState(
             latitude=float(pts.latitude.mean()), longitude=float(pts.longitude.mean()),
             zoom=4.2 if not prefs else 6.5),
         layers=[pdk.Layer("ScatterplotLayer", data=pts[
-            ["longitude", "latitude", "color", "dose", "name"]],
+            ["longitude", "latitude", "color", "v", "name"]],
             get_position=["longitude", "latitude"], get_fill_color="color",
             get_radius=2500, pickable=True)],
-        tooltip={"text": "{name}\n{dose} µSv/h"}))
-    st.caption("凡例(µSv/h): " + " / ".join(
-        f"{l}" for l in BIN_LABELS) + " — 薄い青→濃い青の順に高い")
+        tooltip={"text": "{name}\n{v}"}))
+    if edges:
+        lg = ([f"〜{edges[0]:.3g}"]
+              + [f"{a:.3g}〜{b:.3g}" for a, b in zip(edges[:-1], edges[1:])]
+              + [f"{edges[-1]:.3g}〜"])
+        st.caption(f"凡例({vlabel}): " + " / ".join(lg) + " — 薄い青→濃い青の順に大きい")
+    else:
+        st.caption(f"凡例({vlabel}): 選択範囲では全局ほぼ同じ値です")
 
-    if sel.meas_datetime.nunique() >= 3:
-        st.subheader("時間変化(選択局の中央値)")
-        ts = sel.groupby("meas_datetime").air_dose_rate.median()
-        ts.index = ts.index.str.slice(5, 16)
-        st.line_chart(ts, height=200)
+    if sel.meas_datetime.nunique() >= 3 and vcol != "elevation":
+        st.subheader(f"時間変化 — {vlabel}(選択局の中央値)")
+        tsv = sel.dropna(subset=[vcol]).groupby("meas_datetime")[vcol].median()
+        tsv.index = tsv.index.str.slice(5, 16)
+        st.line_chart(tsv, height=200)
 
         st.subheader("局を選んで時間変化を比べる")
-        opts = latest.sort_values("air_dose_rate", ascending=False)
+        opts = shown.sort_values("val", ascending=False)
         id2name = dict(zip(opts.station_id, opts.display_name.fillna(opts.station_id)))
-        picks = st.multiselect("局(線量率の高い順に並んでいます)",
+        picks = st.multiselect(f"局({vlabel}の大きい順に並んでいます)",
                                options=list(opts.station_id),
                                default=list(opts.station_id[:3]),
                                format_func=lambda i: id2name.get(i, i))
         if picks:
             wide = (sel[sel.station_id.isin(picks)]
                     .pivot_table(index="meas_datetime", columns="station_id",
-                                 values="air_dose_rate")
+                                 values=vcol)
                     .rename(columns=id2name))
             wide.index = wide.index.str.slice(5, 16)
             st.line_chart(wide, height=260)
-            st.caption("単位 µSv/h。雨が降ると一時的に上がるのが見えることがあります。")
+            st.caption(f"{vlabel}。雨の通過や昼夜の変化が見えることがあります。")
 
 # ---------------- 機械学習 ----------------
-with tab_ml:
+elif page == PAGES[1]:
     st.markdown("""
 **やること: 「もしこの観測局が故障したら、周りの局から値を当てられる?」という実験**
 
@@ -312,7 +349,7 @@ with tab_ml:
             width="stretch", hide_index=True)
 
 # ---------------- 仕組み ----------------
-with tab_about:
+else:
     st.markdown(f"""
 ### 仕組み
 - **データ**: [放射線モニタリング情報共有・公表システム(原子力規制委員会)](https://www.ramis.nra.go.jp/)
