@@ -144,6 +144,22 @@ with tab_viz:
         ts.index = ts.index.str.slice(5, 16)
         st.line_chart(ts, height=200)
 
+        st.subheader("局を選んで時間変化を比べる")
+        opts = latest.sort_values("air_dose_rate", ascending=False)
+        id2name = dict(zip(opts.station_id, opts.display_name.fillna(opts.station_id)))
+        picks = st.multiselect("局(線量率の高い順に並んでいます)",
+                               options=list(opts.station_id),
+                               default=list(opts.station_id[:3]),
+                               format_func=lambda i: id2name.get(i, i))
+        if picks:
+            wide = (sel[sel.station_id.isin(picks)]
+                    .pivot_table(index="meas_datetime", columns="station_id",
+                                 values="air_dose_rate")
+                    .rename(columns=id2name))
+            wide.index = wide.index.str.slice(5, 16)
+            st.line_chart(wide, height=260)
+            st.caption("単位 µSv/h。雨が降ると一時的に上がるのが見えることがあります。")
+
 # ---------------- 機械学習 ----------------
 with tab_ml:
     st.markdown("""
@@ -170,11 +186,34 @@ with tab_ml:
     if n_st < 100:
         st.warning(f"選択中の局が{n_st}局です。学習には100局以上を推奨します"
                    "(都道府県の選択を広げてみてください)。")
-    if st.button("🎯 学習を実行(数十秒)", type="primary", disabled=sel.empty):
+
+    ML_KINDS = ["勾配ブースティング(おすすめ)", "ランダムフォレスト", "リッジ回帰(線形)",
+                "k近傍回帰", "かんたんAutoML(4種類を自動比較して勝者を採用)"]
+    kind = st.selectbox("学習方法を選ぶ", ML_KINDS,
+                        help="AutoMLは4種類のモデルを検証用の局で比較し、一番良いものを自動採用します")
+
+    if st.button("🎯 学習を実行(数十秒〜1分)", type="primary", disabled=sel.empty):
         from scipy.spatial import cKDTree
-        from sklearn.ensemble import HistGradientBoostingRegressor
+        from sklearn.ensemble import (HistGradientBoostingRegressor,
+                                      RandomForestRegressor)
+        from sklearn.impute import SimpleImputer
         from sklearn.inspection import permutation_importance
+        from sklearn.linear_model import Ridge
         from sklearn.model_selection import GroupShuffleSplit
+        from sklearn.neighbors import KNeighborsRegressor
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
+
+        def make_model(name):
+            if name.startswith("勾配"):
+                return HistGradientBoostingRegressor(max_iter=300, random_state=0)
+            if name.startswith("ランダム"):
+                return make_pipeline(SimpleImputer(), RandomForestRegressor(
+                    n_estimators=150, n_jobs=-1, random_state=0))
+            if name.startswith("リッジ"):
+                return make_pipeline(SimpleImputer(), StandardScaler(), Ridge(alpha=1.0))
+            return make_pipeline(SimpleImputer(), StandardScaler(),
+                                 KNeighborsRegressor(n_neighbors=10))
 
         with st.spinner("特徴量を作成中(各局の近傍5局を探索)…"):
             frames = []
@@ -214,35 +253,57 @@ with tab_ml:
                       .split(data, groups=data.station_id))
         TR, TE = data.iloc[tr], data.iloc[te]
 
-        with st.spinner("学習中(勾配ブースティング)…"):
-            gbm = HistGradientBoostingRegressor(max_iter=300, random_state=0)
-            gbm.fit(TR[feats], TR.logy)
+        if kind.startswith("かんたんAutoML"):
+            # 学習用の局をさらに2つに分け、検証側の成績で4モデルを比較(テスト局は不使用)
+            tr2, va = next(GroupShuffleSplit(1, test_size=0.25, random_state=1)
+                           .split(TR, groups=TR.station_id))
+            TR2, VA = TR.iloc[tr2], TR.iloc[va]
+            scores = {}
+            for name in ML_KINDS[:4]:
+                with st.spinner(f"AutoML: {name} を試験中…"):
+                    m = make_model(name)
+                    m.fit(TR2[feats], TR2.logy)
+                    pv = np.exp(m.predict(VA[feats]))
+                    scores[name] = np.abs(pv - VA.y.values).mean()
+            kind_won = min(scores, key=scores.get)
+            st.info("**AutoMLの比較結果**(検証用の局での平均誤差 µSv/h) → "
+                    f"勝者: **{kind_won}**")
+            st.dataframe(pd.Series(scores, name="検証誤差").round(4).to_frame(),
+                         width="stretch")
+            model_name = kind_won
+        else:
+            model_name = kind
+
+        with st.spinner(f"学習中({model_name})…"):
+            model = make_model(model_name)
+            model.fit(TR[feats], TR.logy)
         y, p_idw = TE.y.values, np.exp(TE["近傍IDW平均"].values)
-        p_gbm = np.exp(gbm.predict(TE[feats]))
+        p_ml = np.exp(model.predict(TE[feats]))
 
         st.success(f"完了! 学習 {TR.station_id.nunique():,}局 / "
-                   f"試験 {TE.station_id.nunique():,}局(学習には未使用)")
+                   f"試験 {TE.station_id.nunique():,}局(学習には未使用) / "
+                   f"採用モデル: {model_name}")
         res = pd.DataFrame({
-            "平均誤差 µSv/h": [np.abs(p_idw - y).mean(), np.abs(p_gbm - y).mean()],
+            "平均誤差 µSv/h": [np.abs(p_idw - y).mean(), np.abs(p_ml - y).mean()],
             "誤差の中央値 %": [np.median(np.abs(p_idw - y) / y) * 100,
-                          np.median(np.abs(p_gbm - y) / y) * 100],
-        }, index=["近くの局の平均(IDW)", "機械学習(GBM)"]).round(4)
+                          np.median(np.abs(p_ml - y) / y) * 100],
+        }, index=["近くの局の平均(IDW)", f"機械学習({model_name})"]).round(4)
         st.dataframe(res, width="stretch")
 
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("**予測 vs 実測**(対角線上=完全一致)")
             st.scatter_chart(pd.DataFrame({
-                "実測 µSv/h": y, "予測 µSv/h": p_gbm}),
+                "実測 µSv/h": y, "予測 µSv/h": p_ml}),
                 x="実測 µSv/h", y="予測 µSv/h", height=320)
         with col2:
             st.markdown("**モデルは何を重視した?**")
             sub = TE.sample(min(800, len(TE)), random_state=0)
-            imp = permutation_importance(gbm, sub[feats], sub.logy,
+            imp = permutation_importance(model, sub[feats], sub.logy,
                                          n_repeats=3, random_state=0)
             st.bar_chart(pd.Series(imp.importances_mean, index=feats)
                          .sort_values(), height=320, horizontal=True)
-        worst = TE.assign(err=np.abs(p_gbm - y) / y).nlargest(5, "err")
+        worst = TE.assign(err=np.abs(p_ml - y) / y).nlargest(5, "err")
         st.markdown("**外した局トップ5**(なぜ外れたか考えてみよう — 周りに局が少ない?"
                     "線量の変化が急な地域?)")
         st.dataframe(worst[["name", "y", "err"]].assign(
