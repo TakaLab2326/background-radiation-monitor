@@ -1,7 +1,7 @@
 name: collect
 on:
   schedule:
-    - cron: "*/10 * * * *"   # 10分ごと(混雑時は数分遅延することがある)
+    - cron: "4,14,24,34,44,54 * * * *"   # 10分ごと(混雑時は数分遅延することがある)
   workflow_dispatch:
 
 permissions:
