@@ -75,3 +75,9 @@
 - テーマはハブ→iframeへ転送、タブ切替時にresizeを送って再描画。2.1MB
 - 統合Artifact: https://claude.ai/code/artifact/85c720e3-4da2-476e-88db-4fc26236a489
 - 更新手順: 3つの生成スクリプト→viz_hub.py→同URLへ再公開
+
+## 2026-07-08 午前 (13) Streamlitアプリ
+- 済: app.py(選択→可視化→MLボタン、局分割厳守、tarball経由データ取得10分キャッシュ)+requirements.txt
+- 検証: AppTestで起動+ML実行まで自動テスト合格(学習3,631局/試験1,211局)。先頭ゼロ落ちの結合全滅バグをセルフレビューで修正
+- デプロイ: appブランチ(mainのデータコミットによる再起動を回避)。Streamlit Cloud接続はユーザー操作待ち
+- collect cron: 依然自動発火0回 → 混雑分(0,10,20…)回避のため 4,14,24… 分に変更して様子見
