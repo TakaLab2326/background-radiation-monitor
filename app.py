@@ -30,6 +30,9 @@ PREF = {f"{i:02d}": n for i, n in enumerate(
      "岡山県", "広島県", "山口県", "徳島県", "香川県", "愛媛県", "高知県", "福岡県",
      "佐賀県", "長崎県", "熊本県", "大分県", "宮崎県", "鹿児島県", "沖縄県"], start=1)}
 TYPE_NAMES = {1: "モニタリングポスト", 2: "リアルタイム線量計", 3: "その他"}
+VARS = {"空間線量率 (µSv/h)": "air_dose_rate", "風速 (m/s)": "wind_speed",
+        "降水量 (mm)": "precipitation", "日射量": "solar_amount",
+        "計数率 (cpm)": "counting_rate", "標高 (m)": "elevation"}
 
 # 線量率5ビンの色(検証済みパレット・ライト用)
 BIN_EDGES = [0.05, 0.1, 0.3, 1.0]
@@ -110,7 +113,7 @@ st.title("📡 選んで学ぶ 放射線モニタリング")
 st.caption("全国の空間線量率(10分値)を選んで可視化し、そのまま機械学習を体験できます。"
            "データは10分ごとに自動収集(GitHub Actions)。")
 
-PAGES = ["② 可視化", "③ 機械学習を体験", "仕組みと出典"]
+PAGES = ["② 可視化", "②' 関係と外れ値", "③ 機械学習を体験", "仕組みと出典"]
 page = st.radio("ページ", PAGES, horizontal=True, key="page",
                 label_visibility="collapsed")
 
@@ -120,9 +123,6 @@ if page == PAGES[0]:
         st.warning("選択条件に合うデータがありません。条件を広げてください。")
         st.stop()
 
-    VARS = {"空間線量率 (µSv/h)": "air_dose_rate", "風速 (m/s)": "wind_speed",
-            "降水量 (mm)": "precipitation", "日射量": "solar_amount",
-            "計数率 (cpm)": "counting_rate", "標高 (m)": "elevation"}
     vlabel = st.selectbox("表示する項目(モニタリング値のほか気象・地形も選べます)",
                           list(VARS), key="var")
     vcol = VARS[vlabel]
@@ -197,8 +197,73 @@ if page == PAGES[0]:
             st.line_chart(wide, height=260)
             st.caption(f"{vlabel}。雨の通過や昼夜の変化が見えることがあります。")
 
-# ---------------- 機械学習 ----------------
+# ---------------- 関係と外れ値 ----------------
 elif page == PAGES[1]:
+    st.markdown("**特徴量どうしの関係を調べる** — 軸を選ぶと局ごとの最新値で散布図を描きます。"
+                "関係が見える組み合わせ=学習に効く特徴、ポツンと離れた点=外れ値候補です。")
+    if sel.empty:
+        st.warning("選択条件に合うデータがありません。")
+        st.stop()
+    latest = sel.sort_values("meas_datetime").groupby("station_id").tail(1).copy()
+
+    cx, cy = st.columns(2)
+    xlabel = cx.selectbox("横軸", list(VARS), index=1, key="relx")
+    ylabel = cy.selectbox("縦軸", list(VARS), index=0, key="rely")
+    xcol, ycol = VARS[xlabel], VARS[ylabel]
+    df = latest.dropna(subset=[xcol, ycol]).copy()
+    df["name"] = df.display_name.fillna(df.station_id)
+    if len(df) < 10 or xcol == ycol:
+        st.warning("この組み合わせで両方の値を持つ局が10局未満か、同じ項目です。"
+                   "軸を変えてください(気象はセンサ付き局のみが持ちます)。")
+        st.stop()
+
+    def robust_z(v):
+        med = v.median()
+        mad = (v - med).abs().median() * 1.4826
+        return (v - med) / mad if mad > 0 else v * 0.0
+
+    thr = st.slider("外れ値のきびしさ(ロバストzスコア。小さいほど多く検出)",
+                    2.0, 6.0, 3.5, 0.5)
+    zx, zy = robust_z(df[xcol]), robust_z(df[ycol])
+    df["判定"] = np.where((zx.abs() > thr) | (zy.abs() > thr), "外れ値候補", "通常")
+    n_out = int((df["判定"] == "外れ値候補").sum())
+
+    logy = st.checkbox("縦軸を対数にする(線量率のように裾が長い項目で見やすい)",
+                       value=(ycol == "air_dose_rate"))
+    plot = pd.DataFrame({xlabel: df[xcol],
+                         ylabel: np.log10(df[ycol]) if logy and (df[ycol] > 0).all()
+                         else df[ycol], "判定": df["判定"]})
+    if logy and (df[ycol] > 0).all():
+        plot = plot.rename(columns={ylabel: f"log10 {ylabel}"})
+    st.scatter_chart(plot, x=xlabel, y=plot.columns[1], color="判定", height=420)
+
+    r = df[[xcol, ycol]].corr(method="spearman").iloc[0, 1]
+    m1, m2 = st.columns(2)
+    m1.metric("関係の強さ(スピアマン相関)", f"{r:+.2f}")
+    m2.metric("外れ値候補", f"{n_out}局 / {len(df)}局")
+    st.caption("相関の目安: ±0.7以上=強い / ±0.4=中くらい / 0付近=ほぼ無関係。"
+               "相関が強い特徴は学習に効きやすい(ただし偶然の相関もある)。")
+
+    if n_out:
+        worst = df.assign(zmax=np.maximum(zx.abs(), zy.abs())).nlargest(
+            min(10, n_out), "zmax")
+        st.dataframe(worst[["name", xcol, ycol, "zmax"]].rename(columns={
+            "name": "局名", xcol: xlabel, ycol: ylabel, "zmax": "zスコア"}).round(3),
+            width="stretch", hide_index=True)
+        st.session_state["outlier_ids"] = set(df.loc[df["判定"] == "外れ値候補",
+                                                     "station_id"])
+        st.checkbox(f"⬇ この外れ値候補 {n_out}局 を「③機械学習」の学習から除外する",
+                    key="exclude_outliers")
+    with st.expander("⚠ 外れ値は外せばよいとは限らない(重要)"):
+        st.markdown(
+            "外れ値には2種類あります。**(1) 機器の異常や入力ミス**(例: ありえない負の値)"
+            "は外すべきですが、**(2) 本当にそういう値の場所**(例: 福島の帰還困難区域の高い"
+            "線量率)は本物のデータなので、外すと「高い場所を知らないモデル」になって"
+            "しまいます。地図やニュースと照らして、どちらのタイプか考えてから除外するのが"
+            "正しい手順です。除外して精度がどう変わるか比べるのも良い実験です。")
+
+# ---------------- 機械学習 ----------------
+elif page == PAGES[2]:
     st.markdown("""
 **やること: 「もしこの観測局が故障したら、周りの局から値を当てられる?」という実験**
 
@@ -223,6 +288,12 @@ elif page == PAGES[1]:
     if n_st < 100:
         st.warning(f"選択中の局が{n_st}局です。学習には100局以上を推奨します"
                    "(都道府県の選択を広げてみてください)。")
+
+    excl_ids = (st.session_state.get("outlier_ids", set())
+                if st.session_state.get("exclude_outliers") else set())
+    if excl_ids:
+        st.info(f"「関係と外れ値」ページで指定した外れ値候補 **{len(excl_ids)}局** を"
+                "除外して学習します(チェックを外せば戻ります)。")
 
     ML_KINDS = ["勾配ブースティング(おすすめ)", "ランダムフォレスト", "リッジ回帰(線形)",
                 "k近傍回帰", "かんたんAutoML(4種類を自動比較して勝者を採用)"]
@@ -252,9 +323,10 @@ elif page == PAGES[1]:
             return make_pipeline(SimpleImputer(), StandardScaler(),
                                  KNeighborsRegressor(n_neighbors=10))
 
+        sel_ml = sel[~sel.station_id.isin(excl_ids)] if excl_ids else sel
         with st.spinner("特徴量を作成中(各局の近傍5局を探索)…"):
             frames = []
-            for ts_key, g in sel.groupby("meas_datetime"):
+            for ts_key, g in sel_ml.groupby("meas_datetime"):
                 g = g.drop_duplicates("station_id")
                 if len(g) < 30:
                     continue
