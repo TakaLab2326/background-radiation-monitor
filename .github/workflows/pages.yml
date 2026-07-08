@@ -1,6 +1,6 @@
 name: pages
 on:
-  schedule:
+  schedule:   # 2026-07-08 スケジューラ再登録のため更新
     - cron: "17 * * * *"     # 毎時17分にダッシュボード再生成
   workflow_dispatch:
   push:

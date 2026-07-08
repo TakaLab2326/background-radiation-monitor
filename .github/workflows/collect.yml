@@ -1,6 +1,6 @@
 name: collect
 on:
-  schedule:
+  schedule:   # 2026-07-08 スケジューラ再登録のため更新
     - cron: "4,14,24,34,44,54 * * * *"   # 10分ごと(混雑時は数分遅延することがある)
   workflow_dispatch:
 
