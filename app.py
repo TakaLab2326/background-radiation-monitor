@@ -89,14 +89,16 @@ prefs = st.sidebar.multiselect(
     "都道府県(空欄=全国)", options=list(PREF), format_func=lambda c: PREF[c])
 types = [t for t in (1, 2, 3)
          if st.sidebar.checkbox(TYPE_NAMES[t], value=(t != 3), key=f"ty{t}")]
-tmin, tmax = meas.t.min().to_pydatetime(), meas.t.max().to_pydatetime()
-if tmin < tmax:
-    trange = st.sidebar.slider("期間", tmin, tmax, (tmin, tmax), format="MM/DD HH:mm")
+times = sorted(meas.meas_datetime.unique())
+if len(times) > 1:
+    t0, t1 = st.sidebar.select_slider(
+        "期間(実在する測定時刻が目盛り)", options=times, value=(times[0], times[-1]),
+        format_func=lambda v: v[5:16].replace("T", " "))
 else:
-    trange = (tmin, tmax)
+    t0, t1 = times[0], times[-1]
 
 sel = meas[meas.data_type.isin(types)
-           & meas.t.between(*trange)
+           & meas.meas_datetime.between(t0, t1)
            & (meas.pref_code.isin(prefs) if prefs else True)]
 st.sidebar.markdown(
     f"**選択中: {sel.station_id.nunique():,}局 / {len(sel):,}行**\n\n"
