@@ -62,7 +62,8 @@ python3 ~/Desktop/ramis_monitor/make_map.py && open out/ramis_map.html
 
 ## データの意味(2026-07-07時点の実測による推定)
 
-- APIエンドポイント: `GET https://www.ramis.nra.go.jp/api/v1/map/map-means-data-public?data_type=N`
+- 取得先(画面表示用の非公式エンドポイント。公式Public APIではなく仕様変更・停止があり得る):
+  `GET https://www.ramis.nra.go.jp/api/v1/map/map-means-data-public?data_type=N`
   (gzip圧縮JSON)
 - data_type: 0=欠測局一覧(236局・故障ラベルに使える) / 1=モニタリングポスト(2,551局・
   うち約756局に風向風速降水量あり) / 2=リアルタイム線量測定システム(3,582局) / 3=その他(35局)

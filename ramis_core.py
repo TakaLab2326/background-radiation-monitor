@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RAMIS(放射線モニタリング情報共有・公表システム) 公開APIクライアント + SQLite蓄積コア。
+"""RAMIS(放射線モニタリング情報共有・公表システム) 画面表示用・非公式JSONエンドポイントの取得クライアント + SQLite蓄積コア。
 
 Python標準ライブラリのみで動く(conda環境不問)。
 APIは公式ドキュメントの無い内部APIのため、仕様変更で壊れる可能性がある。
@@ -13,6 +13,7 @@ import io
 import json
 import sqlite3
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime
 
@@ -47,6 +48,13 @@ def fetch_snapshot(data_type: int, timeout: int = 60, retries: int = 1):
                     raw = gzip.GzipFile(fileobj=io.BytesIO(raw)).read()
             payload = json.loads(raw)
             return payload["data"]
+        except urllib.error.HTTPError as e:
+            if e.code in (403, 429):  # アクセス拒否・過剰リクエストは再試行せず即中止
+                raise RuntimeError(
+                    f"fetch refused (HTTP {e.code}) data_type={data_type}") from e
+            last_err = e
+            if attempt < retries:
+                time.sleep(5)
         except Exception as e:  # ネットワーク断・一時エラーは1回だけ再試行
             last_err = e
             if attempt < retries:
