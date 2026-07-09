@@ -19,7 +19,7 @@ PAGES = [
 ]
 
 TEMPLATE = """<meta charset="utf-8">
-<title>RAMIS ダッシュボード（試作）</title>
+<title>RAMIS 非公式ダッシュボード（試作）</title>
 <style>
   :root {
     --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e;
@@ -66,7 +66,7 @@ TEMPLATE = """<meta charset="utf-8">
 </style>
 
 <nav role="tablist" aria-label="表示切り替え">
-  <span class="brand">RAMIS 試作</span>
+  <span class="brand">RAMIS 試作（非公式）</span>
   __TABS__
 </nav>
 <main>__FRAMES__</main>

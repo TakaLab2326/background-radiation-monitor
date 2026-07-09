@@ -365,7 +365,7 @@ document.getElementById("miss-note").textContent =
 
 /* ---------- フッター・再描画 ---------- */
 document.getElementById("foot").innerHTML =
-  `データ出典: <a href="https://www.ramis.nra.go.jp/">放射線モニタリング情報共有・公表システム（原子力規制委員会）</a>（${P.generated_at.slice(0,10)} に利用）。` +
+  `データ出典: <a href="https://www.ramis.nra.go.jp/">放射線モニタリング情報共有・公表システム（原子力規制委員会）</a>（${P.generated_at.slice(0,10)} に利用）を加工して作成（非公式）。` +
   `評価は人工マスク方式（値の分かっている局を隠して予測し正解と比較）。GBM=勾配ブースティング決定木。` +
   `降水特徴は雨天データ未蓄積のため本評価では効いていない。海岸線: Natural Earth。` +
   `本ページは学習・研究用の試作。生成 ${P.generated_at}`;

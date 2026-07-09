@@ -428,7 +428,7 @@ window.addEventListener("resize", () => { draw(); });
 
 /* ---------- フッター ---------- */
 document.getElementById("foot").innerHTML =
-  `データ出典: <a href="https://www.ramis.nra.go.jp/">放射線モニタリング情報共有・公表システム（原子力規制委員会）</a>（${P.generated_at.slice(0,10)} に利用）。` +
+  `データ出典: <a href="https://www.ramis.nra.go.jp/">放射線モニタリング情報共有・公表システム（原子力規制委員会）</a>（${P.generated_at.slice(0,10)} に利用）を加工して作成（非公式）。` +
   `単位 µSv/h＝マイクロシーベルト毎時。日本の平常時の空間線量率はおおむね 0.02〜0.1 µSv/h。` +
   `海岸線: Natural Earth（dataofjapan/land 経由）。` +
   `本ページは学習・研究用の試作で、公式の公表資料ではありません。生成 ${P.generated_at}`;

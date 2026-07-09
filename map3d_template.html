@@ -351,7 +351,7 @@ sc.addEventListener("pointerleave", tipSc.hide);
 
 /* ---------- フッター・再描画 ---------- */
 document.getElementById("foot").innerHTML =
-  `データ出典: <a href="https://www.ramis.nra.go.jp/">放射線モニタリング情報共有・公表システム（原子力規制委員会）</a>（${P.generated_at.slice(0,10)} に利用）。` +
+  `データ出典: <a href="https://www.ramis.nra.go.jp/">放射線モニタリング情報共有・公表システム（原子力規制委員会）</a>（${P.generated_at.slice(0,10)} に利用）を加工して作成（非公式）。` +
   `標高: Open-Meteo Elevation API（Copernicus DEM GLO-90, ESA）。海岸線: Natural Earth。` +
   `高さは選択倍率で強調表示（実寸ではない）。本ページは学習・研究用の試作。生成 ${P.generated_at}`;
 
