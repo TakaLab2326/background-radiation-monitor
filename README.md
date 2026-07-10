@@ -75,3 +75,9 @@ python3 make_map.py && open out/ramis_map.html
 `backfill_eval.py` — 本物の欠測期間での答え合わせ(復旧バックフィル利用)。`ramis_ml`で実行
 `rain_radar.py` — 気象庁ナウキャスト実況→全局の頭上の雨(collect.pyから自動実行、単体実行も可)
 `quality_watch.py` — 観測網の品質監視(ドリフト/張り付きの点検候補ランキング)。`ramis_ml`で実行
+
+`tools/build_missing_ledger.py` — 欠測イベント台帳(欠測1件=1行。開始/復旧/継続時間・周辺局数・雨照合・σつき推定) → `data/missing_events.csv`
+
+`rise_watch.py` — 上昇エピソード検出×頭上雨照合。「雨で説明できない上昇」を点検候補としてランキング → `out/rise_watch.csv`
+
+`viz_gap_map.py` — 情報空白マップ(クリギングσ×人口。σは福島/その他で地域較正・機器ノイズ除外) → `out/gap_map.html`。人口データ: [WorldPop 2020](https://www.worldpop.org/) (CC BY 4.0)

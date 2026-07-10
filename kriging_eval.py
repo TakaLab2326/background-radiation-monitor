@@ -20,16 +20,29 @@ import impute_eval as ie
 SEEDS = range(3)
 
 
-def fit_gp(x_tr, y_tr, rng):
-    """サブサンプルでカーネル学習 → 全学習点に固定カーネルで適用したGPを返す。"""
+def fit_gp(x_tr, y_tr, rng, hyper_xy=None, hyper_y=None, latent=False):
+    """サブサンプルでカーネル学習 → 全学習点に固定カーネルで適用したGPを返す。
+
+    hyper_xy/hyper_y: ハイパーパラメータ学習に使う点(省略時は学習点と同じ)。
+      地域で統計性質が違う場合(福島の不均一等)に学習域を分けるために使う。
+    latent: Trueなら観測ノイズをalpha(学習側のみ)へ移し、予測σは
+      機器ノイズを除いた「場の不確かさ」になる。
+    """
     kernel = (ConstantKernel(1.0, (1e-3, 1e3))
               * Matern(length_scale=20.0, length_scale_bounds=(0.5, 500.0), nu=1.5)
               + WhiteKernel(0.05, (1e-4, 2.0)))
-    sub = rng.choice(len(x_tr), size=min(1000, len(x_tr)), replace=False)
+    hx = x_tr if hyper_xy is None else hyper_xy
+    hy = y_tr if hyper_y is None else hyper_y
+    sub = rng.choice(len(hx), size=min(1000, len(hx)), replace=False)
     gp0 = GaussianProcessRegressor(kernel=kernel, normalize_y=True, random_state=0)
-    gp0.fit(x_tr[sub], y_tr[sub])
-    gp = GaussianProcessRegressor(kernel=gp0.kernel_, optimizer=None,
-                                  normalize_y=True, random_state=0)
+    gp0.fit(hx[sub], hy[sub])
+    if latent:
+        gp = GaussianProcessRegressor(kernel=gp0.kernel_.k1,
+                                      alpha=float(gp0.kernel_.k2.noise_level),
+                                      optimizer=None, normalize_y=True, random_state=0)
+    else:
+        gp = GaussianProcessRegressor(kernel=gp0.kernel_, optimizer=None,
+                                      normalize_y=True, random_state=0)
     gp.fit(x_tr, y_tr)
     return gp, gp0.kernel_
 
