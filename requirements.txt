@@ -4,3 +4,5 @@ numpy==1.26.4
 scikit-learn==1.5.1
 scipy==1.11.4
 pydeck==0.8.0
+charset-normalizer==3.4.7
+pyarrow==24.0.0
