@@ -108,3 +108,9 @@
 - デバッグ2件: ①0.01刻み局のMAD=0疑陽性(396→247件) ②雨観測はスロットの最大17分後(cron形状)→許容20分に
 - 要注視筆頭: エミール幼児園(07) 0.074→0.363 µSv/h(z=32.5)。近隣同時刻データが無く孤立判定不可(収集間引きの実害)
 - 限界: 雨は点サンプリング(仁木町銀山=周囲降雨でも自局行なし)→近傍局の雨参照が次の改善候補。リアルタイム警報ではなく事後検出
+
+## 2026-07-12 (18) Streamlit Cloudデプロイ復旧
+- 済: 「Oh no. Error running app」解決 → 正体はrun-streamlit.shのSegmentation fault(ログはProcessed dependencies!で無言停止、トレースバック無し)
+- 原因: リリース直後のネイティブwheel(charset-normalizer 3.4.9=7/7、pyarrow 25.0.0=7/10)。同一ピンのlinux/amd64 Dockerでは正常=コードは無罪。Rosettaでは再現しない(CPU命令差)
+- 修正: requirements.txtに charset-normalizer==3.4.7 / pyarrow==24.0.0 を固定(appブランチ f5a883e)。実画面で地図5,119局+ML完走(誤差0.0154 µSv/h)を確認
+- 残り: アプリは非公開設定のまま(公開はSettings→Sharingでユーザー操作) / 2ピンの真犯人切り分けは任意 / スライダー起点03-04=復旧局の古いmeas_datetime混入(未対処)
